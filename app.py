@@ -4,14 +4,21 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- CONFIGURATION ---
-CREDS_FILE = "service_account.json" 
-SHEET_NAME = "Storage Control System Ver 2.0"  
+SHEET_NAME = "Storage Control System Ver 2.0"
 TAB_NAME = "MRP_Data"
 
 # --- SETUP CONNECTION ---
 def get_database_connection():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_FILE, scope)
+
+    # DEBUG: Check if secrets are loaded
+    # This tells Python: "If the secret box is NOT empty, use it!"
+    if "gcp_service_account" in st.secrets:
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(st.secrets["gcp_service_account"]), scope)
+    else:
+        # Fallback to local file (Only for your Mac)
+        creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+
     client = gspread.authorize(creds)
     sheet = client.open(SHEET_NAME)
     return sheet
@@ -32,8 +39,8 @@ try:
 
     if menu == "Dashboard":
         st.subheader("📊 Dashboard")
-        st.info(f"Connected to: {SHEET_NAME}")
-        st.write("Welcome to your MRP system.")
+        st.success(f"✅ Connected to Cloud Database: {SHEET_NAME}")
+        st.write("Welcome to your MRP system. Select 'Inventory' to manage stock.")
 
     elif menu == "Inventory":
         st.subheader("📦 Live Inventory (Editable)")
@@ -48,14 +55,13 @@ try:
             with col1:
                 search_term = st.text_input("🔍 Search Inventory:")
 
-            # Filter Logic (for viewing only)
+            # Filter Logic
             if search_term:
                 st.info("⚠️ Editing is disabled while searching. Clear search to edit.")
                 mask = df.astype(str).apply(lambda x: x.str.contains(search_term, case=False)).any(axis=1)
                 st.dataframe(df[mask], use_container_width=True)
             else:
                 # --- EDITABLE TABLE ---
-                # This makes the table interactive!
                 edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
                 # Save Button
@@ -64,7 +70,6 @@ try:
                     if st.button("💾 Save Changes to Google Sheet"):
                         try:
                             worksheet.clear()
-                            # Re-insert headers and data
                             worksheet.append_row(edited_df.columns.tolist())
                             worksheet.append_rows(edited_df.values.tolist())
                             st.success("✅ Database updated successfully!")
@@ -101,37 +106,17 @@ try:
                     st.error("Error: StockCode is required.")
                 else:
                     try:
-                        # Auto-calculate the next S/N
                         existing_data = worksheet.get_all_values()
-                        next_sn = len(existing_data) # Simple logic: Row count
+                        next_sn = len(existing_data) 
                         
-                        # PREPARE THE ROW (Must match your 18 columns exactly)
-                        # 1.S/N, 2.Group, 3.CAT, 4.StockCode, 5.Description, 6.T, 7.W, 8.L, 9.UOM
-                        # 10.Customer, 11.Sup, 12.Code, 13.Unit UOM, 14.In, 15.Out, 16.Bal, 17.Std, 18.Loose
-                        
+                        # PREPARE ROW (18 Columns)
                         new_row = [
-                            next_sn,     # 1. S/N
-                            group,       # 2. Group
-                            cat,         # 3. CAT
-                            stock_code,  # 4. StockCode
-                            desc,        # 5. Description
-                            t_mm,        # 6. T(mm)
-                            w_mm,        # 7. W(mm)
-                            0,           # 8. L(M) - default 0
-                            uom,         # 9. UOM
-                            "",          # 10. Customer - default blank
-                            "",          # 11. Sup - default blank
-                            "",          # 12. Code - default blank
-                            "",          # 13. Unit UOM - default blank
-                            0,           # 14. In - default 0
-                            0,           # 15. Out - default 0
-                            bal,         # 16. Bal
-                            0,           # 17. Bal in Standard - default 0
-                            0            # 18. Bal in Loose - default 0
+                            next_sn, group, cat, stock_code, desc, t_mm, w_mm, 
+                            0, uom, "", "", "", "", 0, 0, bal, 0, 0
                         ]
                         
                         worksheet.append_row(new_row)
-                        st.success(f"Success! Added {stock_code} (S/N {next_sn})")
+                        st.success(f"Success! Added {stock_code}")
                     except Exception as e:
                         st.error(f"Error: {e}")
 
